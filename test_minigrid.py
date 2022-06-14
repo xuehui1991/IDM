@@ -99,68 +99,68 @@ class VisionIntelligence():
         return np.sqrt(np.sum(np.square(np.asarray(l1) - np.asarray(l2))))
 
 
-def test_env(env_id):
-    env = gym.make(env_id)
-    #env = RGBImgPartialObsWrapper(env)
-    env = RGBImgObsWrapper(env)
-    #env = FullyObsWrapper(env)
-    env = ImgObsWrapper(env)
-
-    vi = VisionIntelligence(env)
-
-    #obs = env.reset()
-    obs, reward, done, info = env.step(env.actions.left)
-    # from PIL import Image
-    # im = Image.fromarray(obs)
-    # im.save("obs.png")
-
-    pos = vi.get_position(obs, "agent")
-    print('agent pos is {}'.format(pos))
-    pos = vi.get_position(obs, "goal")
-    print('goal pos is {}'.format(pos))
-
-    min_dis, is_reach_obj, min_obj = vi.traverse(obs)
-    print(min_dis, is_reach_obj, min_obj)
-    
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--env",
-    help="gym environment to load",
-    default='MiniGrid-Empty-6x6-v0 '
-)
-parser.add_argument(
-    "--seed",
-    type=int,
-    help="random seed to generate the environment with",
-    default=-1
-)
-parser.add_argument(
-    "--tile_size",
-    type=int,
-    help="size at which to render tiles",
-    default=32
-)
-parser.add_argument(
-    '--agent_view',
-    default=False,
-    help="draw the agent sees (partially observable view)",
-    action='store_true'
-)
-
-args = parser.parse_args()
-
-test_env(args.env)
-
-# env = gym.make(args.env)
-
-# if args.agent_view:
-#     env = RGBImgPartialObsWrapper(env)
+# def test_env(env_id):
+#     env = gym.make(env_id)
+#     #env = RGBImgPartialObsWrapper(env)
+#     env = RGBImgObsWrapper(env)
+#     #env = FullyObsWrapper(env)
 #     env = ImgObsWrapper(env)
 
-# window = Window('gym_minigrid - ' + args.env)
-# window.reg_key_handler(key_handler)
+#     vi = VisionIntelligence(env)
 
-# reset()
+#     #obs = env.reset()
+#     obs, reward, done, info = env.step(env.actions.left)
+#     # from PIL import Image
+#     # im = Image.fromarray(obs)
+#     # im.save("obs.png")
 
-# # Blocking event loop
-# window.show(block=True)
+#     pos = vi.get_position(obs, "agent")
+#     print('agent pos is {}'.format(pos))
+#     pos = vi.get_position(obs, "goal")
+#     print('goal pos is {}'.format(pos))
+
+#     min_dis, is_reach_obj, min_obj = vi.traverse(obs)
+#     print(min_dis, is_reach_obj, min_obj)
+    
+# parser = argparse.ArgumentParser()
+# parser.add_argument(
+#     "--env",
+#     help="gym environment to load",
+#     default='MiniGrid-Empty-6x6-v0 '
+# )
+# parser.add_argument(
+#     "--seed",
+#     type=int,
+#     help="random seed to generate the environment with",
+#     default=-1
+# )
+# parser.add_argument(
+#     "--tile_size",
+#     type=int,
+#     help="size at which to render tiles",
+#     default=32
+# )
+# parser.add_argument(
+#     '--agent_view',
+#     default=False,
+#     help="draw the agent sees (partially observable view)",
+#     action='store_true'
+# )
+
+# args = parser.parse_args()
+
+# test_env(args.env)
+
+# # env = gym.make(args.env)
+
+# # if args.agent_view:
+# #     env = RGBImgPartialObsWrapper(env)
+# #     env = ImgObsWrapper(env)
+
+# # window = Window('gym_minigrid - ' + args.env)
+# # window.reg_key_handler(key_handler)
+
+# # reset()
+
+# # # Blocking event loop
+# # window.show(block=True)

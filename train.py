@@ -15,7 +15,10 @@ from util import get_logger
 from agent import *
 from util import *
 from config import *
+from test_minigrid import *
 from torch.multiprocessing import Pipe
+
+import gym.wrappers
 
 
 class Runner():
@@ -32,6 +35,7 @@ class Runner():
         env = gym.make(env_id)
         env = RGBImgObsWrapper(env)
         self.env = ImgObsWrapper(env)
+        self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
 
         self.use_cuda = default_config.getboolean('UseGPU')
         self.use_gae = default_config.getboolean('UseGAE')
@@ -77,6 +81,8 @@ class Runner():
         self.clean()
         self.train_step = 0
 
+        self.vi = VisionIntelligence(self.env)
+
 
 
     def clean(self):
@@ -103,6 +109,7 @@ class Runner():
 
 
     def get_data(self): 
+        total_int_reward = np.stack(self.total_int_reward).transpose()
         total_reward = np.stack(self.total_reward).transpose()
         total_state = np.stack(self.total_state).transpose([0,3,2,1])
         #print('total state shape:{}'.format(total_state.shape))
@@ -114,7 +121,7 @@ class Runner():
         #print('total policy shape:{}'.format(total_policy.shape))
         #raise Exception('stop here.')
         self.clean()
-        return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy
+        return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward
 
 
     def run(self, seed = 0):
@@ -130,7 +137,10 @@ class Runner():
             #     # calculate instric reward
             #     pass
 
-            self.post_processing(state, action, next_state, reward, done, value, policy)
+            r1, _, _ = self.vi.traverse(state)
+            r2, _, _ = self.vi.traverse(next_state)
+            int_reward = (r1 - r2)/100
+            self.post_processing(state, action, next_state, reward, done, value, policy, instrice_reward = int_reward)
             state = next_state
 
             # Perform one step of the optimization
@@ -138,11 +148,11 @@ class Runner():
                 _, value, _ = self.agent.get_action(state)
                 self.total_values.append(value)
 
-                total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy = self.get_data()
+                total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward = self.get_data()
 
                 # Step 3. make target and advantage
                 # for now total_int_reward = total_reward
-                total_int_reward = total_reward
+                total_int_reward = total_reward + total_int_reward
                 target, adv = make_train_data_v1(total_int_reward,
                                             np.zeros_like(total_int_reward),
                                             total_values,
@@ -174,6 +184,7 @@ class Runner():
                 self.episode_rewards.append(self.episode_reward)
                 self.episode_reward = 0 
                 if self.step % self.print_interval:
+                    #print('true reward: {}\t int reward: {}'.format(reward, int_reward))
                     print('Total step:{}  Episode Step:{}  Avg Reward:{}'.format(self.step, self.episode_step, np.mean(self.episode_rewards[-10:])))
                 #raise Exception('Stop here.')
                 state = self.env.reset()
