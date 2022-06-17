@@ -71,6 +71,125 @@ class Flatten(nn.Module):
         return input.view(input.size(0), -1)
 
 
+
+class FeatureExtractor(nn.Module):
+
+    def __init__(self, input_size, output_size):
+        super(FeatureExtractor, self).__init__()
+
+        linear = nn.Linear  
+        self.feature = nn.Sequential(
+            nn.Conv2d(
+                in_channels=3,
+                out_channels=32,
+                kernel_size=4,
+                stride=4),
+            nn.LeakyReLU(),
+            nn.Conv2d(
+                in_channels=32,
+                out_channels=64,
+                kernel_size=2,
+                stride=2),
+            nn.LeakyReLU(),
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=64,
+                kernel_size=2,
+                stride=1),
+            nn.LeakyReLU(),
+            Flatten(),
+            linear(
+                7 * 7 * 64,
+                512),
+            nn.LeakyReLU()
+        )
+    
+        total_param = 0
+        for n,m in self.feature.named_modules():
+            if hasattr(m,'weight'):
+                total_param += m.weight.numel()
+        self.feature_param_count = total_param  
+
+                # initial
+        for n,p in self.named_modules():
+            if isinstance(p, nn.Conv2d):
+                init.orthogonal_(p.weight, np.sqrt(2))
+                p.bias.data.zero_()
+
+            if isinstance(p, nn.Linear):
+                init.orthogonal_(p.weight, np.sqrt(2))
+                if p.bias is not None:
+                    p.bias.data.zero_()
+        
+
+    def forward(self, state):
+        x = self.feature(state)
+        return x
+
+
+class MetaControllerNetwork(nn.Module):
+
+    def __init__(self, input_size, output_size):
+        super(MetaControllerNetwork, self).__init__()
+
+        linear = nn.Linear      
+        self.feature = FeatureExtractor(input_size, output_size)
+
+        self.meta_model = nn.Sequential(
+            linear(512, 512),
+            nn.LeakyReLU(),
+            linear(512, output_size)
+        )
+
+        for i in range(len(self.meta_model)):
+            if type(self.meta_model[i]) == nn.Linear:
+                init.orthogonal_(self.meta_model[i].weight, 0.01)
+                self.meta_model[i].bias.data.zero_()
+
+    def forward(self, state):
+        x = self.feature(state)
+        policy = self.meta_model(x)
+        return policy
+
+class ControllerNetwork(nn.Module):
+
+    def __init__(self, input_size, output_size, goal_size):
+        super(ControllerNetwork, self).__init__()
+
+        linear = nn.Linear      
+        self.feature = FeatureExtractor(input_size, output_size)
+
+        self.actor = nn.Sequential(
+            linear(512 + goal_size, 512),
+            nn.LeakyReLU(),
+            linear(512, output_size)
+        )
+
+        self.critic = nn.Sequential(
+            linear(512 + goal_size, 512),
+            nn.LeakyReLU(),
+            linear(512, 1)
+        )
+
+        for i in range(len(self.actor)):
+            if type(self.actor[i]) == nn.Linear:
+                init.orthogonal_(self.actor[i].weight, 0.01)
+                self.actor[i].bias.data.zero_()
+
+        for i in range(len(self.critic)):
+            if type(self.critic[i]) == nn.Linear:
+                init.orthogonal_(self.critic[i].weight, 0.01)
+                self.critic[i].bias.data.zero_()
+
+
+    def forward(self, state, goal):
+        x = self.feature(state)
+        x = torch.cat((x, goal), dim=1)
+        policy = self.actor(x)
+        value = self.critic(x)
+        return policy, value
+
+
 class CnnActorCriticNetwork(nn.Module):
     def __init__(self, input_size, output_size, use_noisy_net=False,use_vit=False):
         super(CnnActorCriticNetwork, self).__init__()

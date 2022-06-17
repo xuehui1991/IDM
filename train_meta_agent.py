@@ -12,7 +12,8 @@ from datetime import datetime
 
 from util import get_logger
 
-from agent import *
+#from agent import *
+from meta_agent import *
 from util import *
 from config import *
 from test_minigrid import *
@@ -53,16 +54,16 @@ class Runner():
         self.eta = float(default_config['ETA'])
         self.clip_grad_norm = float(default_config['ClipGradNorm'])
 
-        self.model_dir = default_config['ModelDir']
-        self.model_name = default_config['ModelName']
-        self.load_model = default_config['LoadModel']
-
-
         self.input_size = env.observation_space.shape  # 4
         self.output_size = env.action_space.n  # 2
+        self.goal_size = 1
+        # TODO: change for envoriment
+        self.num_meta_eps = 50
+
         #print('obs shape:{} action shape:{}'.format(self.input_size, self.output_size))
-        self.agent = Agent(self.input_size,
+        self.agent = MetaAgent(self.input_size,
                             self.output_size,
+                            self.goal_size,
                             self.num_step,
                             self.gamma,
                             lam=self.lam,
@@ -76,10 +77,7 @@ class Runner():
                             use_cuda=self.use_cuda,
                             use_gae=self.use_gae,
                             use_noisy_net=self.use_noisy_net)
-        if self.load_model != 'NA':
-            print(self.load_model)
-            model_path = os.path.join(self.model_dir, self.model_name + self.load_model + '.pt')
-            self.agent.model.load_state_dict(torch.load(model_path))
+
 
         self.step = 0
         self.episode_step = 0
@@ -89,13 +87,23 @@ class Runner():
         self.train_interval = 20
         self.save_interval = 20
         self.loss = []
+        
         self.clean()
         self.clean_for_predictor()
+        self.clean_for_meta()
+
         self.train_step = 0
 
         self.vi = VisionIntelligence(self.env)
-        self.predictor = DistancePredictor(self.input_size, 1, self.use_cuda, self.learning_rate)
+        #self.predictor = DistancePredictor(self.input_size, 1, self.use_cuda, self.learning_rate)
         self.p_loss = []
+        self.m_loss =[]
+
+
+    def clean_for_meta(self):
+        self.eps_goal_policys = []
+        self.eps_goals = []
+        self.eps_rewards = []
 
 
     def clean(self):
@@ -107,6 +115,8 @@ class Runner():
         self.total_done = []
         self.total_values = []
         self.total_policy = []
+
+        self.total_goal = []
 
 
     def clean_for_predictor(self):
@@ -136,8 +146,14 @@ class Runner():
         return loss
 
 
+    def post_processing_for_meta(self, goal, goal_policy, reward):
+        self.eps_goals.append(goal)
+        self.eps_goal_policys.append(goal_policy)
+        self.eps_rewards.append(reward)
+
+
     def post_processing(self, state, action, next_state, reward, done,
-                        value, policy, instrice_reward = None):
+                        value, policy, instrice_reward = None, goal=None):
         self.total_state.append(state)
         self.total_action.append(action)
         self.total_next_state.append(next_state)
@@ -150,129 +166,136 @@ class Runner():
 
         self.cur_state.append(state)
 
+        if goal is not None:
+            self.total_goal.append(goal)
+
+
+    def get_data_for_meta(self):
+        total_eps_goal = np.stack(self.eps_goals).transpose()
+        total_eps_goal_policy = np.stack(self.eps_goal_policys).transpose()
+        total_eps_reward = np.stack(self.eps_rewards).transpose()
+        self.clean_for_meta()
+        return total_eps_goal, total_eps_goal_policy, total_eps_reward 
+
 
     def get_data(self): 
         total_int_reward = np.stack(self.total_int_reward).transpose()
         total_reward = np.stack(self.total_reward).transpose()
         total_state = np.stack(self.total_state).transpose([0,3,2,1])
-        #print('total state shape:{}'.format(total_state.shape))
         total_next_state = np.stack(self.total_next_state).transpose([0,3,2,1])
         total_action = np.stack(self.total_action).transpose().reshape([-1])
         total_done = np.stack(self.total_done).transpose()
         total_values = np.stack(self.total_values).transpose()
         total_policy = self.total_policy
-        #print('total policy shape:{}'.format(total_policy.shape))
-        #raise Exception('stop here.')
+
+        total_goal = np.stack(self.total_goal).transpose()
         self.clean()
-        return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward
+        return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward, total_goal
 
-    # def load_model(self, model, model_path):
-    #     model.load_state_dict(torch.load(model_path))
+
+    def train_controller(self, state, goal):
+        _, value, _ = self.agent.get_action(state, goal)
+        self.total_values.append(value)
+
+        total_state, total_next_state, total_action, total_reward, total_done,\
+            total_values, total_policy, total_int_reward, total_goal = self.get_data()
+
+        #total_int_reward = total_reward + total_int_reward
+        total_int_reward = total_int_reward
+        target, adv = make_train_data_v1(total_int_reward,
+                                    np.zeros_like(total_int_reward),
+                                    total_values,
+                                    self.gamma,
+                                    self.num_step,
+                                    num_worker=1,
+                                    use_gae=self.use_gae,
+                                    lam=self.lam)
+
+        adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-8)
+        # -----------------------------------------------
+        # Step 5. Training!
+        loss  = self.agent.train_model(total_state, total_next_state, target, 
+                                    total_action, adv, total_policy, total_goal)
+
+        return loss
+
     
-    def save_model(self, model, step, model_name, model_dir):
-        model_path = os.path.join(model_dir, model_name + str(step) + '.pt')
-        torch.save(model.state_dict(), model_path)
+    def train_meta_controller(self):
+        total_eps_goal, total_eps_goal_policy, total_eps_reward  = self.get_data_for_meta()
+        meta_loss = self.agent.train_meta_model(total_eps_goal, total_eps_goal_policy, total_eps_reward)
+        return loss
 
 
-    def eval(self, seed = 0, eval_eps=10):
-        #env.seed(seed)
-        state = self.env.reset()
-        episode_step = 0
-        episode_reward = 0
-        episode_rewards = []
-        
-        while True:
-            action, value, policy = self.agent.get_action(state, eval=True)
-            next_state, reward, done, _ = self.env.step(action)
-            episode_reward += reward
-
-            # r1, _, _ = self.vi.traverse(state)
-            # r2, _, _ = self.vi.traverse(next_state)
-            # int_reward = (r1 - r2)/100
-            # self.post_processing(state, action, next_state, reward, done, value, policy, instrice_reward = int_reward)
-            
-            state = next_state
-
-            if done:
-                episode_step +=1
-                episode_rewards.append(episode_reward)
-                episode_reward = 0 
-
-                if episode_step > eval_eps:
-                    print('Episode Step:{}  Avg Reward:{}'.format(episode_step, np.mean(episode_rewards)))
-                    break
-                state = self.env.reset()
+    def get_int_reward(self, goal, state=None, next_state=None, ext_reward=None):
+        if goal == 0.0:
+            assert ext_reward is not None
+            return ext_reward
+        else:
+            assert state is not None
+            assert next_state is not None
+            r1, _, _ = self.vi.traverse(state)
+            r2, _, _ = self.vi.traverse(next_state)
+            int_reward = (r1 - r2)/100
+            return int_reward
 
 
     def run(self, seed = 0):
         #env.seed(seed)
         state = self.env.reset()
 
+        goal, goal_policy = self.agent.get_goal(state)
+
         while True:
-            action, value, policy = self.agent.get_action(state)
+            #action, value, policy = self.agent.get_action(state)
+            action, value, policy = self.agent.get_action(state, goal)
+
             next_state, reward, done, _ = self.env.step(action)
 
             self.step += 1
             self.episode_reward += reward
             # if self.use_icm:
             #     # calculate instric reward
-            #     pass
 
-            r1, _, _ = self.vi.traverse(state)
-            r2, _, _ = self.vi.traverse(next_state)
-            int_reward = (r1 - r2)/100
-            self.post_processing(state, action, next_state, reward, done, value, policy, instrice_reward = int_reward)
+            # r1, _, _ = self.vi.traverse(state)
+            # r2, _, _ = self.vi.traverse(next_state)
+            # int_reward = (r1 - r2)/100
+            # TODO:  will change to the distance predictor later...
+            int_reward = self.get_int_reward(goal, state, next_state, reward)
+
+            self.post_processing(state, action, next_state, reward, done, value, policy, instrice_reward = int_reward, goal=goal)
             state = next_state
 
             # Perform one step of the optimization
             if self.step % self.num_step == 0:
-                _, value, _ = self.agent.get_action(state)
-                self.total_values.append(value)
-
-                total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward = self.get_data()
-
-                # Step 3. make target and advantage
-                # for now total_int_reward = total_reward
-                total_int_reward = total_reward + total_int_reward
-                target, adv = make_train_data_v1(total_int_reward,
-                                            np.zeros_like(total_int_reward),
-                                            total_values,
-                                            self.gamma,
-                                            self.num_step,
-                                            num_worker=1,
-                                            use_gae=self.use_gae,
-                                            lam=self.lam)
-
-
-                adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-8)
-                # -----------------------------------------------
-        
-                # Step 5. Training!
-                loss  = self.agent.train_model(total_state, total_next_state, target, 
-                                            total_action, adv, total_policy)
+                loss = self.train_controller(state, goal)
                 self.loss.append(loss)
 
                 if self.train_step % self.train_interval == 0:
-                    #print(self.loss)
                     print('Train step:{} Avg loss:{}'.format(self.train_step, np.mean(self.loss[-10:])))
-                    if self.train_step % self.save_interval ==0:
-                        self.save_model(self.agent.model, self.train_step, self.model_name, self.model_dir)
-                        #raise
-
+            
                 self.train_step +=1
 
             if done:
                 self.episode_step +=1
                 self.episode_rewards.append(self.episode_reward)
-                self.episode_reward = 0 
                 if self.step % self.print_interval:
-                    #print('true reward: {}\t int reward: {}'.format(reward, int_reward))
-                    print('Total Step:{}  Episode Step:{}  Avg Reward:{} Predictor Loss:{} '.format(self.step, 
-                                self.episode_step, np.mean(self.episode_rewards[-10:]), np.mean(self.p_loss[-10:])))
+                    # print('Total Step:{}  Episode Step:{}  Avg Reward:{} Predictor Loss:{} '.format(self.step, 
+                    #             self.episode_step, np.mean(self.episode_rewards[-10:]), np.mean(self.p_loss[-10:])))
+                    print('Total Step:{}  Episode Step:{}  Avg Reward:{} '.format(self.step, 
+                                self.episode_step, np.mean(self.episode_rewards[-10:])))
+
+                # loss = self.train_predictor()
+                # self.p_loss.append(loss)
                 
-                loss = self.train_predictor()
-                self.p_loss.append(loss)
+                self.post_processing_for_meta(goal, goal_policy, self.episode_reward)
+                if len(self.episode_rewards) % self.num_meta_eps == 0:
+                    loss = self.train_meta_controller()
+                    print('Total EP:{}  Episode Step:{}  Meta Loss:{} '.format(self.step, 
+                                self.episode_step, np.mean(self.m_loss[-1:])))
+
                 state = self.env.reset()
+                self.episode_reward = 0 
+
 
 def main():
     runner = Runner()
