@@ -75,11 +75,11 @@ class MetaAgent():
 
 
     def get_action(self, state, goal, eval=False):
-        goal = one_hot(goal)
+        goal = one_hot(goal, self.goal_size)
         if len(goal.shape) !=2:
             goal = goal[np.newaxis, :]
         
-        print('#GET ACTION : goal shape is {}, state shape is {}'.format(goal.shape, state.shape))
+        #print('#GET ACTION : goal shape is {}, state shape is {}'.format(goal.shape, state.shape))
         state = torch.Tensor(state).to(self.device).float()
         goal = torch.Tensor(goal).to(self.device).float()
         if len(state.shape) == 3:
@@ -142,6 +142,10 @@ class MetaAgent():
         y_batch = torch.LongTensor(y_batch).to(self.device)
         adv_batch = torch.FloatTensor(adv_batch).to(self.device)
 
+
+        goal_batch = one_hot(goal_batch, self.goal_size)
+        if len(goal_batch.shape) !=2:
+            goal_batch = goal_batch[np.newaxis, :]
         goal_batch = torch.FloatTensor(goal_batch).to(self.device)
 
         sample_range = np.arange(len(s_batch))

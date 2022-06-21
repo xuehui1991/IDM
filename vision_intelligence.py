@@ -48,8 +48,11 @@ class VisionIntelligence():
         obj_pos, key_index = self.detect_object(image)
         agent_pos = obj_pos['red']
 
+        # print(goal_index)
+        if len(goal_index) == 1:
+            goal_index = goal_index[0]
         goal_color = key_index[goal_index]
-        dis = self.get_distance(agent_pos, obj_pos[key])
+        dis = self.get_distance(agent_pos, obj_pos[goal_color])
         return dis
 
         # min_key = None

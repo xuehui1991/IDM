@@ -264,8 +264,8 @@ class Runner():
         else:
             assert state is not None
             assert next_state is not None
-            r1, _, _ = self.vi.traverse(state, goal)
-            r2, _, _ = self.vi.traverse(next_state, goal)
+            r1 = self.vi.traverse(state, goal)
+            r2 = self.vi.traverse(next_state, goal)
             int_reward = (r1 - r2)/100
             return int_reward
 
