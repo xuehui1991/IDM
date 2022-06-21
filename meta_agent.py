@@ -77,9 +77,8 @@ class MetaAgent():
         goal = torch.Tensor(goal).to(self.device).float()
         if len(state.shape) == 3:
             state = torch.unsqueeze(state, 0).transpose(1, 3)
-            #print('state shape:{}'.format(state.shape))
         
-        assert len(goal.shape) == 1
+        assert len(goal.shape) == 2
             
         policy, value = self.model(state, goal)
         action_prob = F.softmax(policy, dim=-1).data.cpu().numpy()
@@ -100,28 +99,34 @@ class MetaAgent():
     def compute_intrinsic_reward(self, state, next_state, action):
         pass
 
-    def train_meta_model(self, action_batch, old_policy, reward_batch):
-
-        policy_old_list = torch.stack(old_policy).permute(1, 0, 2).contiguous().view(-1, self.goal_size).to(
-            self.device)
-        m_old = Categorical(F.softmax(policy_old_list, dim=-1))
-        log_prob_old = m_old.log_prob(action_batch)
+    def train_meta_model(self, s_batch, action_batch, reward_batch):
+        s_batch = torch.FloatTensor(s_batch).to(self.device)
+        action_batch = torch.squeeze(torch.LongTensor(action_batch)).to(self.device)
+        reward_batch = torch.FloatTensor(reward_batch).to(self.device)
+        sample_range = np.arange(len(action_batch))
+        # print('action_batch shape:', action_batch.shape)
+        # print('s_batch shape:', s_batch.shape)
+        # print('reward_batch shape:', reward_batch.shape)
 
         meta_loss = []
         for i in range(self.epoch):
             np.random.shuffle(sample_range)
             for j in range(int(len(action_batch) / self.batch_size)):
                 sample_idx = sample_range[self.batch_size * j:self.batch_size * (j + 1)]
-                
+
+                policy = self.meta_model(s_batch[sample_idx])
+                m = Categorical(F.softmax(policy, dim=-1))
+                log_prob = m.log_prob(action_batch[sample_idx])      
+                # print('log_prob shape:', log_prob.shape)          
+
                 self.meta_optimizer.zero_grad()
-                loss = - (log_prob_old[sample_idx] * reward_batch[sample_idx]).mean()
-                meta_loss.append(loss)
+                loss = - (log_prob* reward_batch[sample_idx]).mean()
+                meta_loss.append(loss.item())
                 loss.backward()
-                # torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
                 self.meta_optimizer.step()
             
-        return meta_loss.mean()
-
+        return np.mean(meta_loss)
 
     def train_model(self, s_batch, next_s_batch, target_batch, y_batch, adv_batch, old_policy, goal_batch):
         s_batch = torch.FloatTensor(s_batch).to(self.device)

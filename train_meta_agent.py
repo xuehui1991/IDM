@@ -99,9 +99,13 @@ class Runner():
         self.p_loss = []
         self.m_loss =[]
 
+        self.eps_state = []
+        self.eps_goal = []
+        self.eps_reward = []
+
 
     def clean_for_meta(self):
-        self.eps_goal_policys = []
+        self.eps_states = []
         self.eps_goals = []
         self.eps_rewards = []
 
@@ -146,10 +150,26 @@ class Runner():
         return loss
 
 
-    def post_processing_for_meta(self, goal, goal_policy, reward):
-        self.eps_goals.append(goal)
-        self.eps_goal_policys.append(goal_policy)
-        self.eps_rewards.append(reward)
+    def post_processing_for_meta(self, state, goal, reward):
+        self.eps_goal.append(goal)
+        self.eps_state.append(state)
+        self.eps_reward.append(reward)
+
+
+    def refine_data_for_meta(self):
+        self.eps_states.append(np.asarray(self.eps_state))
+        self.eps_goals.append(np.asarray(self.eps_goal))
+        reward = []
+        R = 0
+        for r in self.eps_reward[::-1]:
+            R = r + self.gamma * R
+            reward.insert(0,R)
+        reward = (reward - np.mean(reward)) / (np.std(reward) + 0.0001)
+        self.eps_rewards.append(np.asarray(reward))
+
+        self.eps_goal = []
+        self.eps_state = []
+        self.eps_reward = []
 
 
     def post_processing(self, state, action, next_state, reward, done,
@@ -166,16 +186,18 @@ class Runner():
 
         self.cur_state.append(state)
 
+        #print('post prcessing:', goal)
         if goal is not None:
-            self.total_goal.append(goal)
+            self.total_goal.append(np.squeeze(goal, axis = 0))
 
 
     def get_data_for_meta(self):
-        total_eps_goal = np.stack(self.eps_goals).transpose()
-        total_eps_goal_policy = np.stack(self.eps_goal_policys).transpose()
-        total_eps_reward = np.stack(self.eps_rewards).transpose()
+        total_eps_state =  np.concatenate(self.eps_states, axis=0).transpose([0,3,2,1])
+        total_eps_goal =  np.concatenate(self.eps_goals, axis=0)
+        total_eps_reward = np.concatenate(self.eps_rewards, axis=0)
+
         self.clean_for_meta()
-        return total_eps_goal, total_eps_goal_policy, total_eps_reward 
+        return total_eps_state, total_eps_goal, total_eps_reward 
 
 
     def get_data(self): 
@@ -187,8 +209,9 @@ class Runner():
         total_done = np.stack(self.total_done).transpose()
         total_values = np.stack(self.total_values).transpose()
         total_policy = self.total_policy
-
-        total_goal = np.stack(self.total_goal).transpose()
+        #print('total_goal shape #1 is {} each shape is {}'.format(len(self.total_goal), self.total_goal[0].shape))
+        total_goal = np.stack(self.total_goal)
+        #print('total_goal shape #2 is {}'.format(total_goal.shape))
         self.clean()
         return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy, total_int_reward, total_goal
 
@@ -199,6 +222,7 @@ class Runner():
 
         total_state, total_next_state, total_action, total_reward, total_done,\
             total_values, total_policy, total_int_reward, total_goal = self.get_data()
+        #print('shape of total goal is:{}'.format(total_goal.shape))
 
         #total_int_reward = total_reward + total_int_reward
         total_int_reward = total_int_reward
@@ -221,9 +245,9 @@ class Runner():
 
     
     def train_meta_controller(self):
-        total_eps_goal, total_eps_goal_policy, total_eps_reward  = self.get_data_for_meta()
-        meta_loss = self.agent.train_meta_model(total_eps_goal, total_eps_goal_policy, total_eps_reward)
-        return loss
+        total_eps_state, total_eps_goal, total_eps_reward  = self.get_data_for_meta()
+        meta_loss = self.agent.train_meta_model(total_eps_state, total_eps_goal, total_eps_reward)
+        return meta_loss
 
 
     def get_int_reward(self, goal, state=None, next_state=None, ext_reward=None):
@@ -243,10 +267,12 @@ class Runner():
         #env.seed(seed)
         state = self.env.reset()
 
-        goal, goal_policy = self.agent.get_goal(state)
+        goal, _ = self.agent.get_goal(state)
 
         while True:
             #action, value, policy = self.agent.get_action(state)
+            if len(goal.shape) !=2:
+                goal = goal[np.newaxis, :]
             action, value, policy = self.agent.get_action(state, goal)
 
             next_state, reward, done, _ = self.env.step(action)
@@ -262,6 +288,7 @@ class Runner():
             # TODO:  will change to the distance predictor later...
             int_reward = self.get_int_reward(goal, state, next_state, reward)
 
+            self.post_processing_for_meta(state, goal, reward)
             self.post_processing(state, action, next_state, reward, done, value, policy, instrice_reward = int_reward, goal=goal)
             state = next_state
 
@@ -287,9 +314,9 @@ class Runner():
                 # loss = self.train_predictor()
                 # self.p_loss.append(loss)
                 
-                self.post_processing_for_meta(goal, goal_policy, self.episode_reward)
+                self.refine_data_for_meta()
                 if len(self.episode_rewards) % self.num_meta_eps == 0:
-                    loss = self.train_meta_controller()
+                    self.m_loss.append(self.train_meta_controller())
                     print('Total EP:{}  Episode Step:{}  Meta Loss:{} '.format(self.step, 
                                 self.episode_step, np.mean(self.m_loss[-1:])))
 

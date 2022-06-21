@@ -183,6 +183,7 @@ class ControllerNetwork(nn.Module):
 
 
     def forward(self, state, goal):
+        assert len(goal.shape) == 2
         x = self.feature(state)
         x = torch.cat((x, goal), dim=1)
         policy = self.actor(x)
