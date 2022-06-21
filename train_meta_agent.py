@@ -10,7 +10,7 @@ from gym_minigrid.wrappers import *
 from tensorboardX import SummaryWriter
 from datetime import datetime
 
-from util import get_logger
+from util import get_logger, one_hot
 
 #from agent import *
 from meta_agent import *
@@ -278,8 +278,6 @@ class Runner():
 
         while True:
             #action, value, policy = self.agent.get_action(state)
-            if len(goal.shape) !=2:
-                goal = goal[np.newaxis, :]
             action, value, policy = self.agent.get_action(state, goal)
 
             next_state, reward, done, _ = self.env.step(action)
