@@ -9,6 +9,8 @@ from torch.distributions.categorical import Categorical
 
 from model import MetaControllerNetwork, ControllerNetwork
 
+from util import one_hot
+
 class MetaAgent():
 
     def __init__(self,
@@ -73,6 +75,11 @@ class MetaAgent():
 
 
     def get_action(self, state, goal, eval=False):
+        goal = one_hot(goal)
+        if len(goal.shape) !=2:
+            goal = goal[np.newaxis, :]
+        
+        print('#GET ACTION : goal shape is {}, state shape is {}'.format(goal.shape, state.shape))
         state = torch.Tensor(state).to(self.device).float()
         goal = torch.Tensor(goal).to(self.device).float()
         if len(state.shape) == 3:

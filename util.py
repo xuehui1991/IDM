@@ -4,6 +4,13 @@ import sys
 import numpy as np
 
 
+def one_hot(in_list, goal_size):
+    # in shape: [1, 1] out shape: [1, goal_size]
+    in_list = np.array(in_list)
+    out_list = np.zeros((in_list, goal_size))
+    out_list[np.arange(in_list.size), in_list] = 1
+    return out_list
+
 def make_train_data_v1(reward, done, value, gamma, num_step, num_worker, use_gae, lam):
     discounted_return = np.empty([num_worker, num_step])
 
