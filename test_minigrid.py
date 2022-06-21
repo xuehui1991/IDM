@@ -25,7 +25,7 @@ OBJECT_TO_COLORS = {
     #'wall'          : 'grey',
     # 'floor'         : 3,
     # 'door'          : 4,
-    #'key'           : 'yellow',
+    'key'           : 'purple',
     # 'ball'          : 6,
     # 'box'           : 7,
     'goal'          : 'green',
@@ -80,7 +80,10 @@ class VisionIntelligence():
 
 
     def get_position(self, image, obj_type):
-        """Find the object based on its color."""
+        """
+        Find the object based on its color.
+        Aussmed one color only contains one object.
+        """
 
         indices = self.check_color(image, obj_type)
         #print('indices: ', indices)

@@ -37,7 +37,7 @@ class Runner():
         env = gym.make(env_id)
         env = RGBImgObsWrapper(env)
         self.env = ImgObsWrapper(env)
-        self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
+        #self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
 
         self.use_cuda = default_config.getboolean('UseGPU')
         self.use_gae = default_config.getboolean('UseGAE')
@@ -60,7 +60,7 @@ class Runner():
         # TODO: change for envoriment
         self.num_meta_eps = 50
 
-        #print('obs shape:{} action shape:{}'.format(self.input_size, self.output_size))
+        print('obs shape:{} action shape:{}'.format(self.input_size, self.output_size))
         self.agent = MetaAgent(self.input_size,
                             self.output_size,
                             self.goal_size,
@@ -78,6 +78,8 @@ class Runner():
                             use_gae=self.use_gae,
                             use_noisy_net=self.use_noisy_net)
 
+
+        print('Init Meta Agent done.')
 
         self.step = 0
         self.episode_step = 0
