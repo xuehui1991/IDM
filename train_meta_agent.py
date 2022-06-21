@@ -16,7 +16,8 @@ from util import get_logger
 from meta_agent import *
 from util import *
 from config import *
-from test_minigrid import *
+# from test_minigrid import *
+from vision_intelligence import *
 from distance_predictor import *
 from torch.multiprocessing import Pipe
 
@@ -37,7 +38,7 @@ class Runner():
         env = gym.make(env_id)
         env = RGBImgObsWrapper(env)
         self.env = ImgObsWrapper(env)
-        self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
+        #self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
 
         self.use_cuda = default_config.getboolean('UseGPU')
         self.use_gae = default_config.getboolean('UseGAE')
@@ -56,7 +57,12 @@ class Runner():
 
         self.input_size = env.observation_space.shape  # 4
         self.output_size = env.action_space.n  # 2
-        self.goal_size = 1
+
+        self.vi = VisionIntelligence(self.env)
+        state = self.env.reset()
+        self.goal_size = self.vi.get_goal_size(state)
+        print('Init env {} and the goal size is {}'.format(env_id, self.goal_size))
+
         # TODO: change for envoriment
         self.num_meta_eps = 50
 
@@ -78,12 +84,13 @@ class Runner():
                             use_gae=self.use_gae,
                             use_noisy_net=self.use_noisy_net)
 
+        print('Init agent done.')
 
         self.step = 0
         self.episode_step = 0
         self.episode_reward = 0
         self.episode_rewards = []
-        self.print_interval = 1000
+        self.print_interval = 100
         self.train_interval = 20
         self.save_interval = 20
         self.loss = []
@@ -94,7 +101,6 @@ class Runner():
 
         self.train_step = 0
 
-        self.vi = VisionIntelligence(self.env)
         #self.predictor = DistancePredictor(self.input_size, 1, self.use_cuda, self.learning_rate)
         self.p_loss = []
         self.m_loss =[]
@@ -103,6 +109,7 @@ class Runner():
         self.eps_goal = []
         self.eps_reward = []
 
+        print('Init done.')
 
     def clean_for_meta(self):
         self.eps_states = []
@@ -257,8 +264,8 @@ class Runner():
         else:
             assert state is not None
             assert next_state is not None
-            r1, _, _ = self.vi.traverse(state)
-            r2, _, _ = self.vi.traverse(next_state)
+            r1, _, _ = self.vi.traverse(state, goal)
+            r2, _, _ = self.vi.traverse(next_state, goal)
             int_reward = (r1 - r2)/100
             return int_reward
 
@@ -294,6 +301,8 @@ class Runner():
 
             # Perform one step of the optimization
             if self.step % self.num_step == 0:
+                print('Total step:{}, Eps reward: {}'.format(self.step, self.episode_reward))
+
                 loss = self.train_controller(state, goal)
                 self.loss.append(loss)
 
