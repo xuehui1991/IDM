@@ -90,7 +90,7 @@ class Runner():
         self.episode_step = 0
         self.episode_reward = 0
         self.episode_rewards = []
-        self.print_interval = 100
+        self.print_interval = 1000
         self.train_interval = 20
         self.save_interval = 20
         self.loss = []
@@ -280,6 +280,7 @@ class Runner():
             #action, value, policy = self.agent.get_action(state)
             if len(goal.shape) !=2:
                 goal = goal[np.newaxis, :]
+            print('goal shape is {}, state shape is {}'.format(goal.shape, state.shape))
             action, value, policy = self.agent.get_action(state, goal)
 
             next_state, reward, done, _ = self.env.step(action)
@@ -301,7 +302,7 @@ class Runner():
 
             # Perform one step of the optimization
             if self.step % self.num_step == 0:
-                print('Total step:{}, Eps reward: {}'.format(self.step, self.episode_reward))
+                #print('Total step:{}, Eps reward: {}'.format(self.step, self.episode_reward))
 
                 loss = self.train_controller(state, goal)
                 self.loss.append(loss)
