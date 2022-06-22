@@ -5,6 +5,7 @@ import logging
 import sys
 import gym
 import gym_minigrid
+import gym.wrappers
 from gym_minigrid.wrappers import *
 
 from tensorboardX import SummaryWriter
@@ -16,6 +17,7 @@ from agent import *
 from util import *
 from config import *
 from torch.multiprocessing import Pipe
+
 
 
 class Runner():
@@ -32,6 +34,7 @@ class Runner():
         env = gym.make(env_id)
         env = RGBImgObsWrapper(env)
         self.env = ImgObsWrapper(env)
+        self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
 
         self.use_cuda = default_config.getboolean('UseGPU')
         self.use_gae = default_config.getboolean('UseGAE')
@@ -48,6 +51,10 @@ class Runner():
         self.eta = float(default_config['ETA'])
         self.clip_grad_norm = float(default_config['ClipGradNorm'])
 
+
+        self.model_dir = default_config['ModelDir']
+        self.model_name = default_config['ModelName']
+        self.load_model = default_config['LoadModel']
 
         self.input_size = env.observation_space.shape  # 4
         self.output_size = env.action_space.n  # 2
@@ -67,6 +74,11 @@ class Runner():
                             use_cuda=self.use_cuda,
                             use_gae=self.use_gae,
                             use_noisy_net=self.use_noisy_net)
+        if self.load_model != 'NA':
+            print('Load Model and eval', self.load_model)
+            model_path = os.path.join(self.model_dir, self.model_name + self.load_model + '.pt')
+            self.agent.model.load_state_dict(torch.load(model_path))
+
         self.step = 0
         self.episode_step = 0
         self.episode_reward = 0
@@ -76,7 +88,6 @@ class Runner():
         self.loss = []
         self.clean()
         self.train_step = 0
-
 
 
     def clean(self):
@@ -117,7 +128,13 @@ class Runner():
         return total_state, total_next_state, total_action, total_reward, total_done, total_values, total_policy
 
 
+    def save_model(self, model, step, model_name, model_dir):
+        model_path = os.path.join(model_dir, model_name + str(step) + '.pt')
+        torch.save(model.state_dict(), model_path)
+
+
     def run(self, seed = 0):
+        self.env.seed(seed)
         state = self.env.reset()
 
         while True:
@@ -165,9 +182,7 @@ class Runner():
                 if self.train_step % self.train_interval == 0:
                     #print(self.loss)
                     print('Train step:{} Avg loss:{}'.format(self.train_step, np.mean(self.loss[-10:])))
-
-
-                #torch.save(agent.model.state_dict(), model_path)
+                    self.save_model(self.agent.model, self.train_step, self.model_name, self.model_dir)
 
             if done:
                 self.episode_step +=1
@@ -176,11 +191,39 @@ class Runner():
                 if self.step % self.print_interval:
                     print('Total step:{}  Episode Step:{}  Avg Reward:{}'.format(self.step, self.episode_step, np.mean(self.episode_rewards[-10:])))
                 #raise Exception('Stop here.')
+                self.env.seed(seed)
+                state = self.env.reset()
+
+    def eval(self, seed = 0, eval_eps=10):
+        self.env.seed(seed)
+        state = self.env.reset()
+        episode_step = 0
+        episode_reward = 0
+        episode_rewards = []
+        
+        while True:
+            action, _, _ = self.agent.get_action(state, eval=True)
+            next_state, reward, done, _ = self.env.step(action)
+            episode_reward += reward
+            
+            state = next_state
+
+            if done:
+                episode_step +=1
+                episode_rewards.append(episode_reward)
+                episode_reward = 0 
+
+                if episode_step > eval_eps:
+                    print('Episode Step:{}  Avg Reward:{}'.format(episode_step, np.mean(episode_rewards)))
+                    break
+                self.env.seed(seed)
                 state = self.env.reset()
 
 def main():
     runner = Runner()
-    runner.run()
+    #runner.run(seed=0)
+    runner.eval(seed=1990)
+
 
 
 if __name__ == '__main__':

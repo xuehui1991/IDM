@@ -48,7 +48,7 @@ class Agent():
         self.model = self.model.to(self.device)
 
 
-    def get_action(self, state):
+    def get_action(self, state, eval=False):
         state = torch.Tensor(state).to(self.device).float()
         if len(state.shape) == 3:
             state = torch.unsqueeze(state, 0).transpose(1, 3)
@@ -56,7 +56,10 @@ class Agent():
             
         policy, value = self.model(state)
         action_prob = F.softmax(policy, dim=-1).data.cpu().numpy()
-        action = self.random_choice_prob_index(action_prob)
+        if not eval:
+            action = self.random_choice_prob_index(action_prob)
+        else:
+            action = np.argmax(action_prob, axis=1)
 
         return action, value.data.cpu().numpy().squeeze(), policy.detach()
 
