@@ -51,7 +51,11 @@ class VisionIntelligence():
         # print(goal_index)
         if len(goal_index) == 1:
             goal_index = goal_index[0]
-        goal_color = key_index[goal_index]
+        try:
+            goal_color = key_index[goal_index]
+        except:
+            print('Key goal_index error in key index: {}'.format(key_index, goal_index))
+            raise
         dis = self.get_distance(agent_pos, obj_pos[goal_color])
         return dis
 

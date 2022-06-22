@@ -38,7 +38,7 @@ class Runner():
         env = gym.make(env_id)
         env = RGBImgObsWrapper(env)
         self.env = ImgObsWrapper(env)
-        #self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
+        self.env = gym.wrappers.Monitor(env=self.env, directory="./videos", force=True)
 
         self.use_cuda = default_config.getboolean('UseGPU')
         self.use_gae = default_config.getboolean('UseGAE')
@@ -271,7 +271,7 @@ class Runner():
 
 
     def run(self, seed = 0):
-        #env.seed(seed)
+        self.env.seed(seed)
         state = self.env.reset()
 
         goal, _ = self.agent.get_goal(state)
@@ -327,6 +327,7 @@ class Runner():
                     print('Total EP:{}  Episode Step:{}  Meta Loss:{} '.format(self.step, 
                                 self.episode_step, np.mean(self.m_loss[-1:])))
 
+                self.env.seed(seed)
                 state = self.env.reset()
                 self.episode_reward = 0 
 
