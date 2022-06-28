@@ -50,7 +50,7 @@ class MetaAgent():
 
         # TODO: change the learning rate
         self.meta_model = MetaControllerNetwork(input_size, goal_size)
-        self.meta_optimizer = optim.Adam(list(self.meta_model.parameters()), lr=learning_rate)
+        self.meta_optimizer = optim.Adam(list(self.meta_model.parameters()), lr=1e-5)
         self.meta_model = self.meta_model.to(self.device)
 
         self.model = ControllerNetwork(input_size, output_size, goal_size)
@@ -64,9 +64,14 @@ class MetaAgent():
             state = torch.unsqueeze(state, 0).transpose(1, 3)
             
         policy = self.meta_model(state)
-        action_prob = F.softmax(policy, dim=-1).data.cpu().numpy()
+        action_prob = F.softmax(policy, dim=-1)
+        #print('action prob: ', action_prob)
         if not eval:
-            action = self.random_choice_prob_index(action_prob)
+            # action = self.random_choice_prob_index(action_prob)
+            action_prob = action_prob.data.cpu().numpy()[0]
+            action_prob /= action_prob.sum() 
+            #print('action_prob\t', action_prob)
+            action = np.random.choice(self.goal_size, 1, p=action_prob, replace=False)
         else:
             # need to consider here, shall we try the goal
             action = np.argmax(action_prob, axis=1)

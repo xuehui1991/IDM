@@ -11,11 +11,11 @@ from gym_minigrid.window import Window
 
 # Map of color names to RGB values
 COLORS = {
-    'green' : np.array([0, 255, 0]),
+    #'green' : np.array([0, 255, 0]),
     'blue'  : np.array([0, 0, 255]),
     'purple': np.array([112, 39, 195]),
     'yellow': np.array([255, 255, 0]),
-    'grey'  : np.array([100, 100, 100]),
+    # 'grey'  : np.array([100, 100, 100]),
     'red'   : np.array([255, 0, 0]),
 }
 
@@ -23,59 +23,59 @@ class VisionIntelligence():
 
     def __init__(self, env):
         self.env = env
+        self.COLORS = collections.OrderedDict(COLORS)
+        self.obj_pos = collections.OrderedDict()
+        self.key_index = collections.OrderedDict()
 
     def get_goal_size(self, image):
-        obj_pos, key_index = self.detect_object(image)
-        return (len(obj_pos)-1)
-
-    def detect_object(self, image):
-        obj_pos = collections.OrderedDict()
-        key_index = {}
-
         i = 0
-        for color_key in COLORS:
+        for color_key in self.COLORS:
             pos = self.get_position(image, color_key)
             # for now dont consider have multiple same objects
             if pos is not None:
-                obj_pos[color_key] = pos
+                #print(i, color_key)
+                self.obj_pos[color_key] = pos
                 # assume key will not change
-                key_index[i] = color_key
+                self.key_index[i] = color_key
                 i = i+1
-        return obj_pos, key_index
 
-    
-    def traverse(self, image, goal_index, thr=2):
-        obj_pos, key_index = self.detect_object(image)
-        agent_pos = obj_pos['red']
+        print('Key index', self.key_index)
+        return (len(self.obj_pos)-1)
+
+    def detect_object(self, image):
+        i = 0
+        for color_key in self.obj_pos:
+            pos = self.get_position(image, color_key)
+            if pos is not None:
+                self.obj_pos[color_key] = pos
+
+    def traverse(self, image, goal_index, thr=11):
+        self.detect_object(image)
+        agent_pos = self.obj_pos['red']
 
         # print(goal_index)
         if len(goal_index) == 1:
             goal_index = goal_index[0]
         try:
-            goal_color = key_index[goal_index]
+            goal_color = self.key_index[goal_index]
         except:
-            print('Key goal_index error in key index: {}'.format(key_index, goal_index))
+            print('Key goal_index error in key index: {}, {}'.format(self.key_index, goal_index))
             raise
-        dis = self.get_distance(agent_pos, obj_pos[goal_color])
-        return dis
 
-        # min_key = None
-        # min_dis = float('inf')
-        # min_index = -1
-        # for key in obj_pos:
-        #     if key is not 'agent':
-        #         dis = self.get_distance(agent_pos, obj_pos[key])
-        #         if min_dis > dis:
-        #             min_dis = dis
-        #             min_key = key
-        # if min_dis < thr:
-        #     min_index = key_index[min_key]
+        dis = self.get_distance(agent_pos, self.obj_pos[goal_color])
 
-        # return min_dis, min_index, key_index[min_key]
-
+        is_reach = -1
+        for index in self.key_index:
+            if self.key_index[index] == 'red':
+                continue
+            color = self.key_index[index]
+            d = self.get_distance(agent_pos, self.obj_pos[color])
+            if d<thr:
+                is_reach = index
+        return dis, is_reach
 
     def check_color(self, image, color_key):
-        color = COLORS[color_key]
+        color = self.COLORS[color_key]
         location = np.all((image == color), axis=2)
         return np.where(location == True)
 
